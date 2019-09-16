@@ -7,9 +7,9 @@
 
 using namespace minidbg;
 
-void Debugger::run() 
+void Debugger::run()
 {
-    std::cout << "Debugger Run() " << m_prog_name << " " <<  m_pid << std::endl;
+    std::cout << "Debugger Run() " << m_prog_name << " " << m_pid << std::endl;
 
     int wait_status;
     auto options = 0;
@@ -20,12 +20,12 @@ void Debugger::run()
     // 但是如果子进程还没有停止运行或结束，则调用waitpid()函数的父进程则会被阻塞，暂停运行。
     waitpid(m_pid, &wait_status, options);
 
-    std::cout << "wait status " << wait_status << std::endl; 
+    std::cout << "wait status " << wait_status << std::endl;
 
     char *line = nullptr;
 
     // 当我们知道这个进程准备好被调试后，我们监听用户的输入，linenoise 函数会自己显示一个提示符并处理用户的输入
-    while ((line = linenoise("minidbg> ")) != nullptr) 
+    while ((line = linenoise("minidbg> ")) != nullptr)
     {
         // 当我们获取到用户输入后，我们把命令发送到相应的处理函数中，
         // 然后我们将这个命令添加到 linenoise 历史并释放资源。
@@ -35,16 +35,21 @@ void Debugger::run()
     }
 }
 
-void Debugger::handle_command(const std::string& line)
+void Debugger::handle_command(const std::string &line)
 {
     std::cout << "handle_command " << line << std::endl;
-    
+
     std::vector<std::string> args = utils::split(line, ' ');
     auto command = args[0];
 
-    if (utils::is_prefix(command, "continue")) 
+    if (utils::is_prefix(command, "continue"))
     {
         continue_execution();
+    }
+    else if (utils::is_prefix(command, "break"))
+    {
+        std::string addr{args[1], 2}; //粗暴认定用户在地址前加了"0x"
+        set_breakpoint_at(std::stol(addr, 0, 16));
     }
     else
     {
@@ -52,7 +57,7 @@ void Debugger::handle_command(const std::string& line)
     }
 }
 
-void Debugger::continue_execution() 
+void Debugger::continue_execution()
 {
     std::cout << "continue_execution" << std::endl;
 
@@ -63,4 +68,14 @@ void Debugger::continue_execution()
     int wait_status;
     auto options = 0;
     waitpid(m_pid, &wait_status, options);
+}
+
+void Debugger::set_breakpoint_at(std::intptr_t addr)
+{
+    std::cout << "set_breakpoint_at address 0x" << std::hex << addr << std::endl;
+
+    BreakPoint bp(m_pid, addr);
+    bp.enable();
+
+    m_breakpoints.insert({addr, bp});
 }

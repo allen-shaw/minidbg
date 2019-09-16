@@ -54,6 +54,6 @@ int main(int argc, char *argv[])
     }
     else 
     {
-
+        std::cerr << "fork fail!" << std::endl;
     }
 }

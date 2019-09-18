@@ -6,6 +6,7 @@
 #include <linux/types.h>
 
 #include "breakpoint.h"
+#include "registers.h"
 
 namespace minidbg
 {
@@ -23,6 +24,10 @@ private:
     void continue_execution();
 
     void set_breakpoint_at(std::intptr_t addr);
+
+    uint64_t read_memory(std::intptr_t addr);
+
+    void write_memory(std::intptr_t addr, uint64_t value);
 
 private:
     std::string m_prog_name;

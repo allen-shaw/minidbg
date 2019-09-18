@@ -86,4 +86,12 @@ void set_register_value(pid_t pid, reg r, reg_value_t value);
 
 reg_value_t *get_reg_value(user_regs_struct &regs, reg r);
 
+reg_value_t get_register_value_from_dwarf_register(pid_t pid, int regnum);
+
+std::string get_register_name(reg r);
+
+reg get_register_from_name(const std::string& name);
+
+void dump_registers(pid_t pid);
+
 } // namespace minidbg

@@ -1,5 +1,7 @@
 #include <iostream>
 #include <sys/ptrace.h>
+#include <algorithm>
+#include <iomanip>
 #include "registers.h"
 
 reg_value_t *minidbg::get_reg_value(user_regs_struct &regs, reg r)
@@ -96,8 +98,6 @@ reg_value_t *minidbg::get_reg_value(user_regs_struct &regs, reg r)
 
 reg_value_t minidbg::get_register_value(pid_t pid, reg r)
 {
-    std::cout << "get_registervalue " << pid << std::endl;
-
     user_regs_struct regs;
 
     // 获取当前所有寄存器数据
@@ -108,8 +108,6 @@ reg_value_t minidbg::get_register_value(pid_t pid, reg r)
 
 void minidbg::set_register_value(pid_t pid, reg r, reg_value_t value)
 {
-    std::cout << "set_register_value " << pid << " value " << value << std::endl;
-
     user_regs_struct regs;
     ptrace(PTRACE_GETREGS, pid, nullptr, &regs);
 
@@ -117,4 +115,57 @@ void minidbg::set_register_value(pid_t pid, reg r, reg_value_t value)
     *reg_value = value;
 
     ptrace(PTRACE_SETREGS, pid, nullptr, &regs);
+}
+
+reg_value_t minidbg::get_register_value_from_dwarf_register(pid_t pid, int regnum)
+{
+    std::cout << "get_register_value_from_dwarf_register " << pid << " regnum " << regnum << std::endl;
+
+    // 判断regnum 是否在g_register_descriptors 中
+    auto it = std::find_if(begin(g_register_descriptors), end(g_register_descriptors), [regnum](auto &rd) { return rd.dwarf_r == regnum; });
+
+    if (it == end(g_register_descriptors))
+    {
+        throw std::out_of_range("Unknown dwarf register");
+    }
+
+    return get_register_value(pid, it->r);
+}
+
+std::string minidbg::get_register_name(reg r)
+{
+    std::cout << "get_register_name " << int(r) << std::endl;
+
+    auto it = std::find_if(begin(g_register_descriptors), end(g_register_descriptors), [r](auto &rd) { return rd.r == r; });
+
+    if (it == end(g_register_descriptors))
+    {
+        throw std::out_of_range("Unknown dwarf register");
+    }
+
+    return it->name;
+}
+
+minidbg::reg minidbg::get_register_from_name(const std::string &name)
+{
+    std::cout << "get_register_from_name " << name << std::endl;
+
+    auto it = std::find_if(begin(g_register_descriptors), end(g_register_descriptors), [name](auto &rd) { return rd.name == name; });
+
+    if (it == end(g_register_descriptors))
+    {
+        throw std::out_of_range("Unknown dwarf register");
+    }
+
+    return it->r;
+}
+
+void minidbg::dump_registers(pid_t pid)
+{
+    for (const auto &rd : g_register_descriptors)
+    {
+        // 16进制输出寄存器的值 0x00000000000234
+        std::cout << rd.name << " 0x"
+                  << std::setfill('0') << std::setw(16) << std::hex << get_register_value(pid, rd.r) << std::endl;
+    }
 }

@@ -51,6 +51,25 @@ void Debugger::handle_command(const std::string &line)
         std::string addr{args[1], 2}; //粗暴认定用户在地址前加了"0x"
         set_breakpoint_at(std::stol(addr, 0, 16));
     }
+    else if (utils::is_prefix(command, "register"))
+    {
+        if (utils::is_prefix(args[1], "dump"))
+        {
+            dump_registers(m_pid);
+        }
+        else if (utils::is_prefix(args[1], "read"))
+        {
+            auto reg = get_register_from_name(args[2]);
+            std::cout << get_register_value(m_pid, reg) << std::endl;
+        }
+        else if (utils::is_prefix(args[1], "write"))
+        {
+            // 假设用户输入0xVal,去掉0x
+            std::string val{args[3], 2};
+            auto reg = get_register_from_name(args[2]);
+            set_register_value(m_pid, reg, std::stol(val, 0, 16)); // 输入格式为16进制
+        }
+    }
     else
     {
         std::cerr << "Unknown command" << std::endl;
@@ -79,3 +98,16 @@ void Debugger::set_breakpoint_at(std::intptr_t addr)
 
     m_breakpoints.insert({addr, bp});
 }
+
+uint64_t Debugger::read_memory(std::intptr_t addr)
+{
+    return ptrace(PTRACE_PEEKDATA, m_pid, addr, nullptr);
+}
+
+void Debugger::write_memory(std::intptr_t addr, uint64_t value)
+{
+    ptrace(PTRACE_POKEDATA, m_pid, addr, value);
+}
+
+// TODO 一次读写多个字节，可以使用process_vm_readv 和 process_vm_writev 或 /proc/<pid>/mem 来代替 ptrace。
+

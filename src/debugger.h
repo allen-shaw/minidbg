@@ -29,6 +29,12 @@ private:
 
     void write_memory(std::intptr_t addr, uint64_t value);
 
+    uint64_t get_pc();
+
+    void set_pc(uint64_t pc);
+
+    void step_over_breakpoint();
+
 private:
     std::string m_prog_name;
     pid_t m_pid;

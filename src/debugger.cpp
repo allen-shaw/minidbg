@@ -70,6 +70,20 @@ void Debugger::handle_command(const std::string &line)
             set_register_value(m_pid, reg, std::stol(val, 0, 16)); // 输入格式为16进制
         }
     }
+    else if (utils::is_prefix(command, "memory"))
+    {
+        std::string addr{args[2], 2};
+
+        if (utils::is_prefix(args[1], "read"))
+        {
+            std::cout << read_memory(std::stol(addr, 0, 16)) << std::endl;
+        }
+        else if (utils::is_prefix(args[1], "write"))
+        {
+            std::string val{args[3], 2};
+            write_memory(std::stol(addr, 0, 16), std::stol(val, 0, 16));
+        }
+    }
     else
     {
         std::cerr << "Unknown command" << std::endl;
@@ -111,3 +125,23 @@ void Debugger::write_memory(std::intptr_t addr, uint64_t value)
 
 // TODO 一次读写多个字节，可以使用process_vm_readv 和 process_vm_writev 或 /proc/<pid>/mem 来代替 ptrace。
 
+uint64_t Debugger::get_pc()
+{
+    return get_register_value(m_pid, reg::rip);
+}
+
+void Debugger::set_pc(uint64_t pc)
+{
+    set_register_value(m_pid, reg::rip, pc);
+}
+
+void Debugger::step_over_breakpoint()
+{
+    auto possible_breakpoint_location = get_pc() - 1;
+
+    if (m_breakpoints.count(possible_breakpoint_location))
+    {
+        
+    }
+
+}

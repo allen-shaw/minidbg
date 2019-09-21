@@ -94,13 +94,14 @@ void Debugger::continue_execution()
 {
     std::cout << "continue_execution" << std::endl;
 
+    // TODO 为什么需要加step_over_breakpoint();
+    step_over_breakpoint();
+    
     // continue_execution 函数将使用ptrace来告知被调试进程继续执行
     // 然后用waitpid函数直到它收到信号。
     ptrace(PTRACE_CONT, m_pid, nullptr, nullptr);
 
-    int wait_status;
-    auto options = 0;
-    waitpid(m_pid, &wait_status, options);
+    wait_for_signal();
 }
 
 void Debugger::set_breakpoint_at(std::intptr_t addr)
@@ -137,11 +138,35 @@ void Debugger::set_pc(uint64_t pc)
 
 void Debugger::step_over_breakpoint()
 {
-    auto possible_breakpoint_location = get_pc() - 1;
+    // TODO 为什么要-1
+    std::intptr_t possible_breakpoint_location = get_pc() - 1;
 
     if (m_breakpoints.count(possible_breakpoint_location))
     {
-        
-    }
+        // 所在位置有断点
+        auto it = m_breakpoints.find(possible_breakpoint_location);
+        if (it != m_breakpoints.end())
+        {
+            auto &bp = it->second;
 
+            if (bp.is_enabled())
+            {
+                auto previous_instruction_address = possible_breakpoint_location;
+                set_pc(previous_instruction_address);
+
+                bp.disable();
+                ptrace(PTRACE_SINGLESTEP, m_pid, nullptr, nullptr);
+
+                wait_for_signal();
+                bp.enable();
+            }
+        }
+    }
+}
+
+void Debugger::wait_for_signal() 
+{
+    int wait_status;
+    auto options = 0;
+    waitpid(m_pid, &wait_status, options);
 }

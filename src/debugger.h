@@ -35,6 +35,8 @@ private:
 
     void step_over_breakpoint();
 
+    void wait_for_signal();
+
 private:
     std::string m_prog_name;
     pid_t m_pid;

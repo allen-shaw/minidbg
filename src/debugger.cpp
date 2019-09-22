@@ -1,6 +1,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <sys/ptrace.h>
+#include <fstream>
 #include "linenoise.h"
 #include "debugger.h"
 #include "utils.h"
@@ -96,7 +97,7 @@ void Debugger::continue_execution()
 
     // TODO 为什么需要加step_over_breakpoint();
     step_over_breakpoint();
-    
+
     // continue_execution 函数将使用ptrace来告知被调试进程继续执行
     // 然后用waitpid函数直到它收到信号。
     ptrace(PTRACE_CONT, m_pid, nullptr, nullptr);
@@ -138,8 +139,8 @@ void Debugger::set_pc(uint64_t pc)
 
 void Debugger::step_over_breakpoint()
 {
-    // TODO 为什么要-1
-    std::intptr_t possible_breakpoint_location = get_pc() - 1;
+    // 我们在收到SIGTRAP的时候修正PC指针的值，因此这里无需再做一次修正
+    std::intptr_t possible_breakpoint_location = get_pc();
 
     if (m_breakpoints.count(possible_breakpoint_location))
     {
@@ -151,12 +152,8 @@ void Debugger::step_over_breakpoint()
 
             if (bp.is_enabled())
             {
-                auto previous_instruction_address = possible_breakpoint_location;
-                set_pc(previous_instruction_address);
-
                 bp.disable();
                 ptrace(PTRACE_SINGLESTEP, m_pid, nullptr, nullptr);
-
                 wait_for_signal();
                 bp.enable();
             }
@@ -164,9 +161,179 @@ void Debugger::step_over_breakpoint()
     }
 }
 
-void Debugger::wait_for_signal() 
+void Debugger::wait_for_signal()
 {
     int wait_status;
     auto options = 0;
     waitpid(m_pid, &wait_status, options);
+
+    auto siginfo = get_signal_info();
+
+    switch (siginfo.si_signo)
+    {
+    case SIGTRAP:
+        handle_sigtrap(siginfo);
+        break;
+    case SIGSEGV:
+        std::cout << "Yay, segmentfault. Reason: " << siginfo.si_code << std::endl;
+        break;
+    default:
+        std::cout << "Got signal " << strsignal(siginfo.si_signo) << std::endl;
+        break;
+    }
+}
+
+// TODO 处理成员函数或内联
+dwarf::die Debugger::get_function_from_pc(uint64_t pc)
+{
+    // 遍历所有compilation_units
+    for (auto &cu : m_dwarf.compilation_units())
+    {
+        // 当前编译单元是否含有对应的地址
+        if (die_pc_range(cu.root()).contains(pc))
+        {
+            // 遍历该cu下的每一个die
+            for (const auto &die : cu.root())
+            {
+                // die类型必须是一个函数
+                if (die.tag == dwarf::DW_TAG::subprogram)
+                {
+                    // pc在当前函数则返回
+                    if (die_pc_range(die).contains(pc))
+                    {
+                        return die;
+                    }
+                }
+            }
+        }
+    }
+
+    throw std::out_of_range("Cannot find function");
+}
+
+dwarf::line_table::iterator
+Debugger::get_line_entry_from_pc(uint64_t pc)
+{
+    // 遍历所有compilation_units
+    for (auto &cu : m_dwarf.compilation_units())
+    {
+        if (die_pc_range(cu.root()).contains(pc))
+        {
+            auto &lt = cu.get_line_table();
+            auto it = lt.find_address(pc);
+            if (it != lt.end())
+            {
+                return it;
+            }
+
+            throw std::out_of_range("Cannot find line entry");
+        }
+    }
+
+    throw std::out_of_range("Cannot find line entry");
+}
+
+/**
+ * file_name: 源文件名
+ * line:      关注的行号，文件第几行      
+ * n_lines_context: 关注行所在的上下文，要打印前n行和后n行
+ */
+void Debugger::print_srouce(const std::string &file_name, unsigned int line, unsigned int n_lines_context)
+{
+    std::ifstream file(file_name);
+
+    /**
+     * 在当前行附近设置一个窗口
+     * start_line: 要打印的起始行
+     * end_line:    要打印的结束行
+     */
+    unsigned int start_line;
+    unsigned int end_line;
+
+    if (line <= n_lines_context)
+    {
+        // 关注行比上下文范围小，就是从第一行开始打印
+        start_line = 1;
+    }
+    else
+    {
+        // 开始行就是关注行行号前n行
+        start_line = line - n_lines_context;
+    }
+
+    if (line < n_lines_context)
+    {
+        end_line = line + n_lines_context + (n_lines_context - line) + 1;
+    }
+    else
+    {
+        // 结束行就是关注行行号后n行
+        end_line = line + n_lines_context + 1;
+    }
+
+    char c;
+    unsigned int current_line = 1u; // 当前行
+
+    // 读取文件到开始行数
+    while (current_line != start_line && file.get(c)) // TODO 为什么不换成getline，不用每次都读写一个字符
+    {
+        if (c == '\n')
+        {
+            // 读完一行
+            current_line++;
+        }
+    }
+
+    //如果我们在当前行则输出光标
+    std::cout << (current_line == line ? "> " : "  ");
+
+    // 输出start_line 到 end_line 之前的代码
+    while (current_line <= end_line && file.get(c))
+    {
+        std::cout << c;
+        if (c == '\n')
+        {
+            ++current_line;
+            // 每一行都判断是否是关注的行号，如果是，则输出>
+            std::cout << (current_line == line ? ">" : "  ");
+        }
+    }
+
+    // 最后输出endl来flushed
+    std::cout << std::endl;
+}
+
+siginfo_t Debugger::get_signal_info()
+{
+    siginfo_t info;
+
+    // 获取关于子进程发送的最后一个信号的信息。
+    ptrace(PTRACE_GETSIGINFO, m_pid, nullptr, &info);
+    return info;
+}
+
+void Debugger::handle_sigtrap(siginfo_t info)
+{
+    switch (info.si_code)
+    {
+    case SI_KERNEL:
+    case TRAP_BRKPT:
+    {
+        // 触发断点
+        set_pc(get_pc() - 1); // TODO: 为什么要回到上一条指令？
+        std::cout << "Hit breakpoint at address 0x" << get_pc() << std::endl;
+
+        // 获取当前行
+        auto line_entry = get_line_entry_from_pc(get_pc());
+        print_srouce(line_entry->file->path, line_entry->line);
+        return;
+    }
+    break;
+    case TRAP_TRACE:
+        // 单步执行
+        return;
+    default:
+        std::cout << "Unknown SIGTRAP code " << info.si_code << std::endl;
+        return;
+    }
 }

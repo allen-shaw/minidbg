@@ -59,6 +59,18 @@ private:
 
     void handle_sigtrap(siginfo_t info);
 
+    void single_step_instruction();
+
+    void single_step_instruction_with_breakpoint_check();
+
+    void remove_breakpoint(std::intptr_t addr);   
+
+    void step_in();
+
+    void step_over();
+
+    void step_out();
+
 private:
     std::string m_prog_name;
     pid_t m_pid;

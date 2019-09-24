@@ -85,6 +85,24 @@ void Debugger::handle_command(const std::string &line)
             write_memory(std::stol(addr, 0, 16), std::stol(val, 0, 16));
         }
     }
+    else if (utils::is_prefix(command, "stepi"))
+    {
+        single_step_instruction_with_breakpoint_check();
+        auto line_entry = get_line_entry_from_pc(get_pc());
+        print_srouce(line_entry->file->path, line_entry->line);
+    }
+    else if (utils::is_prefix(command, "step"))
+    {
+        step_in();
+    }
+    else if (utils::is_prefix(command, "next"))
+    {
+        step_over();
+    }
+    else if (utils::is_prefix(command, "finish"))
+    {
+        step_out();
+    }
     else
     {
         std::cerr << "Unknown command" << std::endl;
@@ -335,5 +353,124 @@ void Debugger::handle_sigtrap(siginfo_t info)
     default:
         std::cout << "Unknown SIGTRAP code " << info.si_code << std::endl;
         return;
+    }
+}
+
+void Debugger::single_step_instruction()
+{
+    ptrace(PTRACE_SINGLESTEP, m_pid, nullptr, nullptr);
+    wait_for_signal();
+}
+
+void Debugger::single_step_instruction_with_breakpoint_check()
+{
+    if (m_breakpoints.count(get_pc()))
+    {
+        // 当前指令有断点
+        step_over_breakpoint();
+    }
+    else
+    {
+        single_step_instruction();
+    }
+}
+
+void Debugger::remove_breakpoint(std::intptr_t addr)
+{
+    if (m_breakpoints.at(addr).is_enabled())
+    {
+        m_breakpoints.at(addr).disable();
+    }
+
+    m_breakpoints.erase(addr);
+}
+
+void Debugger::step_in()
+{
+    auto line = get_line_entry_from_pc(get_pc())->line;
+
+    // 执行到下一步
+    while (get_line_entry_from_pc(get_pc())->line == line)
+    {
+        single_step_instruction_with_breakpoint_check();
+    }
+
+    // 打印当前行
+    auto line_entry = get_line_entry_from_pc(get_pc());
+    print_srouce(line_entry->file->path, line_entry->line);
+}
+
+// 解决方法是在源码的下一行设置断点
+// 可能不是连续的下一行，因为我们可能在一个循环中或在某些条件结构中。
+// TODO 真正的那些调试器通常会检查目前正在执行的是什么指令，然后计算出所有可能的分支目标，然后在所有可能上设置断点。
+// 采用简单做法，在当前函数的所有行上设置断点
+void Debugger::step_over()
+{
+    auto func = get_function_from_pc(get_pc());
+
+    // 函数入口地址，返回地址
+    auto func_entry = at_low_pc(func);
+    auto func_end = at_high_pc(func);
+
+    auto line = get_line_entry_from_pc(func_entry);
+    auto current_line = get_line_entry_from_pc(get_pc());
+
+    std::vector<std::intptr_t> to_delete;
+
+    // 从函数入口开始，给每一行（除了当前行）打断点
+    while (line->address < func_end)
+    {
+        // 如果不是当前行而且没有断点，则添加一个断点
+        if (line->address != current_line->address && m_breakpoints.count(line->address))
+        {
+            set_breakpoint_at(line->address);
+            to_delete.push_back(line->address);
+        }
+        ++line;
+    }
+
+    // 在返回地址也打断点
+    auto frame_pointer = get_register_value(m_pid, reg::rbp);
+    auto return_address = read_memory(frame_pointer + 8);
+    if (!m_breakpoints.count(return_address))
+    {
+        set_breakpoint_at(return_address);
+        to_delete.push_back(return_address);
+    }
+
+    continue_execution();
+
+    // 移除断点
+    for (auto& addr: to_delete)
+    {
+        remove_breakpoint(addr);
+    }
+}
+
+// 在函数return的地方设置断点并continue
+void Debugger::step_out()
+{
+    // 每个栈帧对应一个函数
+    // %rbp指向栈帧开始，%rsp指向栈顶。
+    auto frame_pointer = get_register_value(m_pid, reg::rbp);
+
+    //  返回地址保存在栈帧开始的后8字节中
+    auto return_address = read_memory(frame_pointer + 8);
+
+    bool should_remove_breakpoint = false;
+    if (!m_breakpoints.count(return_address))
+    {
+        // 如果return处没有断点，则添加一个
+        set_breakpoint_at(return_address);
+        should_remove_breakpoint = true;
+    }
+
+    // 继续执行到断点处
+    continue_execution();
+
+    // 移除掉返回地址上的断点
+    if (should_remove_breakpoint)
+    {
+        remove_breakpoint(return_address);
     }
 }

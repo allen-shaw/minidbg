@@ -17,7 +17,7 @@ void Debugger::run()
 
     // 当被调试进程启动完成，他将会发送SIGTRAP 信号，
     // 表示这是一个跟踪或是遇到断点。我们通过watpid函数来等待直到收到这个信号
-    // 如果在调用waitpid()函数时，当指定等待的子进程已经停止运行或结束了，则waitpid()会立即返回；
+    // 如果在调用waitpid()函数时，当指定等待的子进程已经停止运行或结 束了，则waitpid()会立即返回；
     // 但是如果子进程还没有停止运行或结束，则调用waitpid()函数的父进程则会被阻塞，暂停运行。
     waitpid(m_pid, &wait_status, options);
 

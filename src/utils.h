@@ -8,4 +8,6 @@ namespace utils
 std::vector<std::string> split(const std::string &s, char delimiter);
 
 bool is_prefix(const std::string &s, const std::string &of);
+
+bool is_suffix(const std::string &s, const std::string &of);
 } // namespace utils

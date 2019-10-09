@@ -474,3 +474,46 @@ void Debugger::step_out()
         remove_breakpoint(return_address);
     }
 }
+
+void Debugger::set_breakpoint_at_function(const std::string &func_name)
+{
+    for (const auto &cu : m_dwarf.compilation_units())
+    {
+        for (const auto &die : cu.root()) 
+        {
+            if (die.has(dwarf::DW_AT::name) && at_name(die) == func_name)
+            {
+                auto low_pc = at_low_pc(die);
+                auto entry = get_line_entry_from_pc(low_pc);
+
+                // 一个函数的DW_AT_low_pc实际上并不指向用户代码的起始地址，而是指向函数的序言
+                // 编译器通常会为函数生成序言和结尾（prologue and epilogue）来保存和恢复寄存器，操作栈指针等。
+                // 这对我们来说并不是十分有用，因此我们递增入口的行号来到用户代码的第一行而不是函数序言。
+                ++entry;
+
+                set_breakpoint_at(entry->address);
+            }
+        }
+    }
+}
+
+void Debugger::set_breakpoint_at_souce_line(const std::string &file, unsigned int line)
+{
+    for (const auto &cu : m_dwarf.compilation_units())
+    {
+        if (utils::is_suffix(file, at_name(cu.root())))
+        {
+            const auto &linetable = cu.get_line_table();
+            for (const auto &entry : linetable)
+            {
+                //  is_stmt检查行表入口是否被标记为一个语句的开头,
+                // 这是由编译器根据它认为是断点的最佳目标的地址设置的。
+                if (entry.is_stmt && entry.line == line) 
+                {
+                    set_breakpoint_at(entry.address);
+                    return;
+                }
+            }
+        }
+    }
+}

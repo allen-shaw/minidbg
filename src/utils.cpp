@@ -20,3 +20,9 @@ bool utils::is_prefix(const std::string& s, const std::string& of)
     if (s.size() > of.size()) return false;
     return std::equal(s.begin(), s.end(), of.begin());
 }
+
+bool utils::is_suffix(const std::string &s, const std::string &of)
+{
+    if (s.size() > of.size()) return false;
+    return std::equal(of.begin() + (of.length() - s.length()), of.end(), s.begin());
+}

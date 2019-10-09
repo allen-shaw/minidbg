@@ -71,6 +71,9 @@ private:
 
     void step_out();
 
+    void set_breakpoint_at_function(const std::string &func_name);
+
+    void set_breakpoint_at_souce_line(const std::string &file, unsigned int line);
 private:
     std::string m_prog_name;
     pid_t m_pid;

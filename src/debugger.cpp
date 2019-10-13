@@ -49,8 +49,23 @@ void Debugger::handle_command(const std::string &line)
     }
     else if (utils::is_prefix(command, "break"))
     {
-        std::string addr{args[1], 2}; //粗暴认定用户在地址前加了"0x"
-        set_breakpoint_at(std::stol(addr, 0, 16));
+        // 0x<hexadecimal> -> 地址断点
+        // <line>:<filename> -> 行号断点
+        // <anything else> ->函数名断点
+        if (args[1][0] == '0' && args[1][1] == 'x') 
+        {
+            std::string addr{args[1], 2}; //粗暴认定用户在地址前加了"0x"
+            set_breakpoint_at(std::stol(addr, 0, 16));
+        }
+        else if (args[1].find(':') != std::string::npos)
+        {
+            auto file_and_line = utils::split(args[1], ':');
+            set_breakpoint_at_source_line(file_and_line[0], std::stoi(file_and_line[1]));
+        } 
+        else
+        {
+            set_breakpoint_at_function(args[1]);
+        }
     }
     else if (utils::is_prefix(command, "register"))
     {
@@ -102,6 +117,16 @@ void Debugger::handle_command(const std::string &line)
     else if (utils::is_prefix(command, "finish"))
     {
         step_out();
+    }
+    else if (utils::is_prefix(command, "symbol"))
+    {
+        auto symbols = lookup_symbol(args[1]);
+        for (auto &&s : symbols)
+        {
+            char *str;
+            sprintf(str, "%s %s 0x%04x", s.name, Symbol::to_string(s.type), s.addr);
+            std::cout << str << std::endl;
+        } 
     }
     else
     {
@@ -497,7 +522,7 @@ void Debugger::set_breakpoint_at_function(const std::string &func_name)
     }
 }
 
-void Debugger::set_breakpoint_at_souce_line(const std::string &file, unsigned int line)
+void Debugger::set_breakpoint_at_source_line(const std::string &file, unsigned int line)
 {
     for (const auto &cu : m_dwarf.compilation_units())
     {
@@ -516,4 +541,29 @@ void Debugger::set_breakpoint_at_souce_line(const std::string &file, unsigned in
             }
         }
     }
+}
+
+std::vector<Symbol> Debugger::lookup_symbol(const std::string &name)
+{
+    std::vector<Symbol> symbols;
+
+    for (auto &sec : m_elf.sections())
+    {
+        if (sec.get_hdr().type != elf::sht::symtab &&
+            sec.get_hdr().type != elf::sht::dynsym)
+        {
+            continue;
+        }
+
+        for (auto sym: sec.as_symtab()) 
+        {
+            if (sym.get_name() == name) 
+            {
+                auto &data = sym.get_data();
+                symbols.push_back(Symbol{Symbol::to_symbol_type(data.type()), sym.get_name(), data.value});
+            }
+        }
+    }
+
+    return symbols;
 }

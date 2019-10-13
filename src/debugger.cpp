@@ -128,6 +128,14 @@ void Debugger::handle_command(const std::string &line)
             std::cout << str << std::endl;
         } 
     }
+    else if (utils::is_prefix(command, "backtrace")) 
+    {
+        print_backtrace();
+    }
+    else if (utils::is_prefix(command, "quit"))
+    {
+        exit(0);
+    }
     else
     {
         std::cerr << "Unknown command" << std::endl;
@@ -566,4 +574,27 @@ std::vector<Symbol> Debugger::lookup_symbol(const std::string &name)
     }
 
     return symbols;
+}
+
+void Debugger::print_backtrace()
+{
+    auto output_frame = [frame_number = 0](auto &&func) mutable {
+        std::cout << "frame #" << frame_number++ << ": 0x" << dwarf::at_low_pc(func) 
+        << ' ' << dwarf::at_name(func) << std::endl;
+    };
+
+    auto current_func = get_function_from_pc(get_pc());
+    output_frame(current_func);
+
+    auto frame_point = get_register_value(m_pid, reg::rbp);
+    auto return_addr = read_memory(frame_point + 8);
+
+    while (dwarf::at_name(current_func) != "main")
+    {
+        current_func = get_function_from_pc(return_addr);
+        output_frame(current_func);
+        frame_point = read_memory(frame_point);
+        return_addr = read_memory(frame_point + 8);
+    }
+    
 }
